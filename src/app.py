@@ -8,8 +8,18 @@ for extracurricular activities at Mergington High School.
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, EmailStr
 import os
 from pathlib import Path
+from typing import Optional, Dict
+
+class Student(BaseModel):
+    email: EmailStr
+    full_name: str
+    grade: int
+    contact_phone: Optional[str] = None
+    guardian_email: Optional[EmailStr] = None
+    health_notes: Optional[str] = None
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -18,6 +28,9 @@ app = FastAPI(title="Mergington High School API",
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
+
+# In-memory student database
+students: Dict[str, Student] = {}
 
 # In-memory activity database
 activities = {
@@ -130,3 +143,48 @@ def unregister_from_activity(activity_name: str, email: str):
     # Remove student
     activity["participants"].remove(email)
     return {"message": f"Unregistered {email} from {activity_name}"}
+
+# Student Management endpoints
+@app.post("/students/")
+def create_student(student: Student):
+    """Create a new student record"""
+    if student.email in students:
+        raise HTTPException(status_code=400, detail="Student already exists")
+    students[student.email] = student
+    return student
+
+@app.get("/students/")
+def list_students():
+    """Get all students"""
+    return list(students.values())
+
+@app.get("/students/{email}")
+def get_student(email: str):
+    """Get a specific student's details"""
+    if email not in students:
+        raise HTTPException(status_code=404, detail="Student not found")
+    return students[email]
+
+@app.put("/students/{email}")
+def update_student(email: str, student: Student):
+    """Update a student's information"""
+    if email not in students:
+        raise HTTPException(status_code=404, detail="Student not found")
+    if email != student.email:
+        raise HTTPException(status_code=400, detail="Email cannot be changed")
+    students[email] = student
+    return student
+
+@app.delete("/students/{email}")
+def delete_student(email: str):
+    """Delete a student record"""
+    if email not in students:
+        raise HTTPException(status_code=404, detail="Student not found")
+    
+    # Remove student from all activities
+    for activity in activities.values():
+        if email in activity["participants"]:
+            activity["participants"].remove(email)
+    
+    del students[email]
+    return {"message": "Student deleted successfully"}
